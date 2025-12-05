@@ -273,7 +273,7 @@ class CoolPCMCPServer {
             },
           },
           {
-            name: "get_category_products", 
+            name: "get_category_products",
             description: "Browse all products within a specific category. Useful for exploring all options in a product type when you don't have specific search criteria. Returns products with full details including prices and specifications.",
             inputSchema: {
               type: "object",
@@ -292,6 +292,50 @@ class CoolPCMCPServer {
                 },
               },
               required: ["category_id"],
+            },
+          },
+          {
+            name: "search_case",
+            description: "Specialized PC case search tool. Find cases by motherboard size (form factor), side panel type, PSU inclusion, brand, and price. Perfect for finding cases that match your motherboard and aesthetic preferences.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                form_factor: {
+                  type: "string",
+                  description: "Motherboard size compatibility. Options: 'E-ATX' (extended, largest), 'ATX' (standard, most common), 'mATX' (micro-ATX, compact), 'ITX' (mini-ITX, smallest). Must match your motherboard size!",
+                  enum: ["E-ATX", "ATX", "mATX", "ITX"]
+                },
+                side_panel: {
+                  type: "string",
+                  description: "Side panel type for aesthetics and cooling. Options: '全景玻璃' (panoramic glass), '玻璃透側' (glass side panel), '玻璃開孔面板' (perforated glass panel), '雙玻璃透側' (dual glass panels), '四面金屬網孔' (4-side mesh)",
+                  enum: ["全景玻璃", "玻璃透側", "玻璃開孔面板", "雙玻璃透側", "四面金屬網孔"]
+                },
+                has_psu: {
+                  type: "boolean",
+                  description: "Whether case includes power supply unit (PSU). true = case comes with PSU (convenient, budget-friendly), false = case only (bring your own PSU)",
+                },
+                brand: {
+                  type: "string",
+                  description: "Case brand/manufacturer name. Partial match, case-insensitive. Examples: 'Montech', 'COUGAR', 'Fractal', 'Lian Li', 'Thermaltake'. Leave empty for all brands",
+                },
+                min_price: {
+                  type: "number",
+                  description: "Minimum price in TWD. Example: 1000 for cases above NT$1,000",
+                },
+                max_price: {
+                  type: "number",
+                  description: "Maximum price in TWD. Example: 5000 for cases under NT$5,000",
+                },
+                sort_by: {
+                  type: "string",
+                  enum: ["price_asc", "price_desc"],
+                  description: "Price sorting order. 'price_asc' = cheapest first (budget builds), 'price_desc' = most expensive first (premium cases)",
+                },
+                limit: {
+                  type: "number",
+                  description: "Maximum results to return. Valid range: 1-50, default: 10. Higher values to see more options",
+                },
+              },
             },
           },
         ],
@@ -314,6 +358,8 @@ class CoolPCMCPServer {
           return this.searchSSD(args);
         case "search_motherboard":
           return this.searchMotherboard(args);
+        case "search_case":
+          return this.searchCase(args);
         case "get_product_by_model":
           return this.getProductByModel(args);
         case "list_categories":
@@ -1056,7 +1102,7 @@ class CoolPCMCPServer {
       const subcategory = category.subcategories.find(
         sub => sub.name.toLowerCase() === subcategory_name.toLowerCase()
       );
-      
+
       if (!subcategory) {
         return {
           content: [
@@ -1111,6 +1157,200 @@ class CoolPCMCPServer {
         },
       ],
     };
+  }
+
+  private searchCase(args: any) {
+    const {
+      form_factor,
+      side_panel,
+      has_psu,
+      brand,
+      min_price,
+      max_price,
+      sort_by,
+      limit = 10
+    } = args;
+
+    const results: any[] = [];
+
+    // 找到機殼分類 (category_id: "14")
+    const caseCategory = this.productData.find(cat => cat.category_id === '14');
+
+    if (!caseCategory) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Case category not found",
+              results: []
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    // 遍歷所有產品進行篩選
+    for (const subcat of caseCategory.subcategories) {
+      for (const product of subcat.products) {
+        let matches = true;
+
+        // 篩選：Form Factor
+        if (form_factor && matches) {
+          matches = this.matchFormFactor(product.specs, form_factor);
+        }
+
+        // 篩選：側板類型
+        if (side_panel && matches) {
+          matches = this.matchSidePanel(product, side_panel);
+        }
+
+        // 篩選：是否含電源
+        if (has_psu !== undefined && matches) {
+          matches = this.hasPSU(product) === has_psu;
+        }
+
+        // 篩選：品牌
+        if (brand && matches) {
+          const productBrand = (product.brand || '').toLowerCase();
+          matches = productBrand.includes(brand.toLowerCase());
+        }
+
+        // 篩選：價格範圍
+        if (min_price !== undefined && matches) {
+          matches = product.price >= min_price;
+        }
+        if (max_price !== undefined && matches) {
+          matches = product.price <= max_price;
+        }
+
+        if (matches) {
+          results.push({
+            ...product,
+            category_name: caseCategory.category_name,
+            subcategory_name: subcat.name,
+          });
+        }
+      }
+    }
+
+    // 排序
+    if (sort_by === 'price_asc') {
+      results.sort((a, b) => a.price - b.price);
+    } else if (sort_by === 'price_desc') {
+      results.sort((a, b) => b.price - a.price);
+    }
+
+    // 限制結果數量
+    const limitedResults = results.slice(0, limit);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            total_found: results.length,
+            showing: limitedResults.length,
+            filters: {
+              form_factor: form_factor || "any",
+              side_panel: side_panel || "any",
+              has_psu: has_psu !== undefined ? has_psu : "any",
+              brand: brand || "any",
+              price_range: {
+                min: min_price || "any",
+                max: max_price || "any"
+              },
+              sort_by: sort_by || "none"
+            },
+            results: limitedResults.map(p => ({
+              brand: p.brand,
+              model: p.model,
+              specs: p.specs,
+              price: p.price,
+              original_price: p.original_price,
+              discount_amount: p.discount_amount,
+              subcategory: p.subcategory_name,
+              markers: p.markers,
+            })),
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  /**
+   * 匹配主機板尺寸（支援別名）
+   * @param specs 產品規格陣列
+   * @param targetFF 目標尺寸 (E-ATX, ATX, mATX, ITX)
+   * @returns 是否匹配
+   */
+  private matchFormFactor(specs: string[], targetFF: string): boolean {
+    if (!specs || specs.length === 0) return false;
+
+    const specsText = specs.join(' ').toUpperCase();
+    const target = targetFF.toUpperCase();
+
+    // 定義各尺寸的匹配模式
+    const patterns: Record<string, RegExp> = {
+      'E-ATX': /\bE-?ATX\b/,
+      'ATX': /\bATX\b/,
+      'MATX': /\b(M-?ATX|MATX|MICRO\s*ATX)\b/,
+      'ITX': /\b(MINI-?ITX|ITX)\b/
+    };
+
+    const pattern = patterns[target] || new RegExp(`\\b${target}\\b`);
+
+    // 特殊處理：ATX 不應匹配 E-ATX 或 M-ATX
+    if (target === 'ATX') {
+      return pattern.test(specsText) &&
+             !patterns['E-ATX'].test(specsText) &&
+             !patterns['MATX'].test(specsText);
+    }
+
+    return pattern.test(specsText);
+  }
+
+  /**
+   * 匹配側板類型
+   * @param product 產品物件
+   * @param targetPanel 目標側板類型
+   * @returns 是否匹配
+   */
+  private matchSidePanel(product: any, targetPanel: string): boolean {
+    // 組合所有文字（品牌、型號、規格）
+    const allText = [
+      product.brand || '',
+      product.model || '',
+      ...(product.specs || [])
+    ].join(' ');
+
+    // 定義各側板類型的關鍵字
+    const keywords: Record<string, string[]> = {
+      '全景玻璃': ['全景玻璃', '全景側透', '全景'],
+      '玻璃透側': ['玻璃透側'],
+      '玻璃開孔面板': ['玻璃開孔', '開孔面板'],
+      '雙玻璃透側': ['雙玻璃', '雙面玻璃', '雙側玻璃', '雙面版'],
+      '四面金屬網孔': ['四面網孔', '四面金屬網孔']
+    };
+
+    const targetKeywords = keywords[targetPanel] || [];
+
+    // 檢查是否包含任一關鍵字
+    return targetKeywords.some(kw => allText.includes(kw));
+  }
+
+  /**
+   * 偵測是否含電源
+   * @param product 產品物件
+   * @returns 是否含電源
+   */
+  private hasPSU(product: any): boolean {
+    const specsText = product.specs?.join(' ') || '';
+
+    // 搜尋瓦數 (如 550W, 750W, 850W)
+    const wattPattern = /\d{3,4}\s*W/;
+
+    return wattPattern.test(specsText);
   }
 
   async run() {

@@ -35,6 +35,9 @@ coolpc-mcp-server/
 ### 2. 安裝相依性
 
 ```bash
+# 安裝 Python 相依性
+pip3 install -r requirements.txt
+
 # 安裝 Node.js 相依性
 npm install
 ```
@@ -220,6 +223,21 @@ search_motherboard({
   form_factor?: string,// 尺寸規格 (如 'ATX', 'mATX', 'ITX')
   sort_by?: string,    // 排序方式 ('price_asc' | 'price_desc')
   limit?: number       // 結果數量限制 (預設: 10)
+})
+```
+
+### `search_case`
+專門搜尋機殼，支援主機板尺寸、側板類型、電源配置、品牌、價格篩選和排序
+```typescript
+search_case({
+  form_factor?: string,    // 主機板尺寸 (如 'E-ATX', 'ATX', 'mATX', 'ITX')
+  side_panel?: string,     // 側板類型 (如 '全景玻璃', '玻璃透側', '玻璃開孔面板', '雙玻璃透側', '四面金屬網孔')
+  has_psu?: boolean,       // 是否含電源
+  brand?: string,          // 品牌名稱 (部分匹配)
+  min_price?: number,      // 最低價格
+  max_price?: number,      // 最高價格
+  sort_by?: string,        // 排序方式 ('price_asc' | 'price_desc')
+  limit?: number           // 結果數量限制 (預設: 10)
 })
 ```
 

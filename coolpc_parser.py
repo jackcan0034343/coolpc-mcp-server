@@ -11,8 +11,7 @@ import csv
 import html
 from typing import List, Dict, Any
 import argparse
-import urllib.request
-import urllib.error
+import requests
 
 class WorkingCoolPCParser:
     def __init__(self, html_file: str):
@@ -23,41 +22,54 @@ class WorkingCoolPCParser:
     def download_html(output_file: str = 'evaluate.html') -> bool:
         """從 CoolPC 網站下載並轉換 HTML 文件"""
         url = 'https://www.coolpc.com.tw/evaluate.php'
-        
+
         try:
             print(f"正在從 {url} 下載資料...")
-            
+
             # 設置請求標頭，模擬瀏覽器
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
-            
-            # 創建請求
-            request = urllib.request.Request(url, headers=headers)
-            
-            # 下載資料
-            with urllib.request.urlopen(request) as response:
-                # 讀取 BIG5 編碼的內容
-                content_bytes = response.read()
-                
-                # 嘗試用 BIG5 解碼，如果失敗則嘗試其他編碼
+
+            # 使用 requests 下載資料（timeout 設定 30 秒）
+            response = requests.get(url, headers=headers, timeout=30)
+
+            # 檢查 HTTP 狀態碼
+            response.raise_for_status()
+
+            # 嘗試用 BIG5 解碼，如果失敗則嘗試其他編碼
+            try:
+                content = response.content.decode('big5')
+            except UnicodeDecodeError:
                 try:
-                    content = content_bytes.decode('big5')
+                    content = response.content.decode('big5-hkscs')
                 except UnicodeDecodeError:
-                    try:
-                        content = content_bytes.decode('big5-hkscs')
-                    except UnicodeDecodeError:
-                        # 如果還是失敗，使用 ignore 參數忽略無法解碼的字符
-                        content = content_bytes.decode('big5', errors='ignore')
-            
+                    # 如果還是失敗，使用 ignore 參數忽略無法解碼的字符
+                    content = response.content.decode('big5', errors='ignore')
+
             # 寫入文件
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(content)
-            
+
             print(f"成功下載並保存到 {output_file}")
             return True
-            
-        except urllib.error.URLError as e:
+
+        except requests.exceptions.SSLError as e:
+            print(f"SSL 錯誤: {e}")
+            print("提示: 可能是 SSL 證書問題，請嘗試更新 certifi: pip3 install --upgrade certifi")
+            return False
+        except requests.exceptions.Timeout:
+            print(f"連線逾時: 伺服器回應時間超過 30 秒")
+            return False
+        except requests.exceptions.ConnectionError as e:
+            print(f"連線錯誤: {e}")
+            print("提示: 請檢查網路連線")
+            return False
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP 錯誤: {e}")
+            print(f"狀態碼: {response.status_code}")
+            return False
+        except requests.exceptions.RequestException as e:
             print(f"網路錯誤: {e}")
             return False
         except Exception as e:

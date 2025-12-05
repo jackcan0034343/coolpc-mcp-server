@@ -1,0 +1,5 @@
+# CoolPC MCP Server - Python Dependencies
+# 安裝方式: pip3 install -r requirements.txt
+
+# HTTP 請求函式庫
+requests>=2.31.0
